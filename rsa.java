@@ -14,19 +14,22 @@ import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 
 
 public class rsa {
 	
-  public static final String ALGORITHM = "RSA";
-  
 
-  public static final String PRIVATE_KEY_FILE = "C:/keys/private.txt";
-
-  public static final String PUBLIC_KEY_FILE = "C:/keys/public.key";
   public static int size=100;
-
+ 
   
   public static BigInteger getCoprime(BigInteger m) {
       int length = m.bitLength()-1;
@@ -42,19 +45,7 @@ public class rsa {
     try {  BigInteger n,e,d;
       size=(kk*dd)/2;
 
-      File privateKeyFile = new File(PRIVATE_KEY_FILE);
-      File publicKeyFile = new File(PUBLIC_KEY_FILE);
-
-      // Create files to store public and private key
-      if (privateKeyFile.getParentFile() != null) {
-        privateKeyFile.getParentFile().mkdirs();
-      }
-      privateKeyFile.createNewFile();
-
-      if (publicKeyFile.getParentFile() != null) {
-        publicKeyFile.getParentFile().mkdirs();
-      }
-      publicKeyFile.createNewFile();
+     
       Liczby lp= new Liczby();
       BigInteger p,q;
       String numStr;
@@ -74,6 +65,7 @@ public class rsa {
        
       writeFile( "public.key",  e+ ";" +n);
       writeFile( "private.key",  d+ ";" +n);
+      writeFile( "key.key",  p+ ";" +q);
  			 
 
 /*System.out.println("p: "+p);
@@ -99,16 +91,7 @@ public class rsa {
 	} 
 
 
-  public static boolean areKeysPresent() {
 
-    File privateKey = new File(PRIVATE_KEY_FILE);
-    File publicKey = new File(PUBLIC_KEY_FILE);
-
-    if (privateKey.exists() && publicKey.exists()) {
-      return true;
-    }
-    return false;
-  }
 
 	private static String bytesToString(byte[] encrypted) {
 		String test = "";
@@ -135,16 +118,16 @@ public class rsa {
 		   if(size>tekst.length()) size=tekst.length();
 		    while(true)
 		    {// if(true) return 2;
-		  first = tekst.substring(0, size);
-		by=first.getBytes();
-		BigInteger nn = new BigInteger(by);
-			if(nn.compareTo(n)==-1)
-			{//System.out.println("Size " + tekst);
-			return size;
-			}
-			size=size-1;
-			if(size==0){//System.out.println("Size2 " + tekst); 
-			return size;} 
+		    	first = tekst.substring(0, size);
+		    	by=first.getBytes();
+		    	BigInteger nn = new BigInteger(by);
+		    	if(nn.compareTo(n)==-1)
+		    	{//System.out.println("Size " + tekst);
+		    		return size;
+		    	}
+		    	size=size-1;
+		    	if(size==0){//System.out.println("Size2 " + tekst); 
+		    		return size;} 
 		  }
 		
 	}
@@ -160,7 +143,60 @@ public class rsa {
 
     }  
 	
-	public byte[][] encryptTotal(String  tekst, BigInteger ee, BigInteger nn)
+	public static BigInteger crt(BigInteger what, BigInteger p, BigInteger q, BigInteger m){
+		   BigInteger dep, deq, qInverse, m1, m2, h;
+
+		   dep = what.remainder(p.subtract(BigInteger.ONE));
+		   deq = what.remainder(q.subtract(BigInteger.ONE));
+		   qInverse =  p.modInverse(q);
+
+		      BigInteger cDp = m.modPow(dep, p);
+		      BigInteger cDq = m.modPow(deq, q);
+		      BigInteger u = ((cDq.subtract(cDp)).multiply(qInverse)).remainder(q);
+		      if (u.compareTo(BigInteger.ZERO) < 0) u = u.add(q);
+		      return cDp.add(u.multiply(p));
+
+		  
+		}
+
+		//Encrypt using d
+		public static BigInteger encrypt2(BigInteger e, BigInteger p, BigInteger q,BigInteger m){
+		    return crt(e,p,q,m);
+		}
+
+		//decrypt using e
+		public static BigInteger decrypt2(BigInteger d, BigInteger p, BigInteger q,BigInteger m){
+		    return crt(d,p,q,m);
+		}
+		
+		
+		public class TaskAsCallable implements Callable<byte[]>{
+			 
+		    
+			private BigInteger d;
+			private BigInteger pp;
+			private BigInteger qq;
+			
+			private byte[] tekst;
+		     
+		   
+		     
+		    public TaskAsCallable(BigInteger d, BigInteger pp, BigInteger qq, byte[] tekst) {
+				this.d=d;
+				this.pp=pp;
+				this.qq=qq;
+				this.tekst=tekst;
+			}
+
+			public byte[] call() throws Exception {
+		         
+		        /* this is where your business logic goes */
+		        return crt(d,pp,qq, new BigInteger(tekst)).toByteArray();
+		    }
+		}	
+	
+	
+	public byte[][] encryptTotal(String  tekst, BigInteger ee, BigInteger nn, BigInteger pp, BigInteger qq, Boolean ctrif)
 	{    BigInteger e;
 		e=ee;
 		BigInteger n;
@@ -184,8 +220,10 @@ public class rsa {
 				first = s.substring(0, size2);
 				 min=first.substring(0, 1);
 				if(polish(min))  { first="?"+s.substring(1,size2);
-				  result[i]= encrypt(first.getBytes(),e,n);
-				 System.out.println(" ddd2");
+				  if(ctrif.equals(false)) result[i]= encrypt(first.getBytes(),e,n);
+				  else
+				  result[i]= encrypt2(e,pp,qq, new BigInteger(first.getBytes())).toByteArray();
+				 //System.out.println(" ddd2");
 				 second = s.substring(size2, s.length());
 					s=second;
 					i=i+1;
@@ -195,7 +233,8 @@ public class rsa {
 			//	result[i] = new byte[size2];
 				//System.out.print("Size: " + first);
 				//System.out.println("...");
-				result[i]= encrypt(first.getBytes(),e,n);
+					 if(ctrif.equals(false))result[i]= encrypt(first.getBytes(),e,n);
+				else  result[i]= encrypt2(e,pp,qq, new BigInteger(first.getBytes())).toByteArray();
 			// result[i]// gives "How ar"
 				second = s.substring(size2, s.length());
 				s=second;
@@ -206,7 +245,8 @@ public class rsa {
 			else 
 			{
 				//result[i] = new byte[size2];
-			result[i]= encrypt(s.getBytes(),e,n);
+				 if(ctrif.equals(false)) result[i]= encrypt(s.getBytes(),e,n);
+				 else result[i]= encrypt2(e,pp,qq, new BigInteger(s.getBytes())).toByteArray();
 
 			return result;
 			
@@ -220,7 +260,7 @@ public class rsa {
 		
 	}
 	
-	public byte[] decryptTotal(byte[][]  tekst, BigInteger dd, BigInteger nn)
+	public byte[] decryptTotal(byte[][]  tekst, BigInteger dd, BigInteger nn, BigInteger pp, BigInteger qq,Boolean ctrif)
 	{  BigInteger d;
 	    d=dd;
 	    BigInteger n;
@@ -230,12 +270,22 @@ public class rsa {
 	    int size=tekst.length;
 	    if(!(tekst[0]==null)) {} 
 	    {
-	    	result=decrypt(tekst[0],d,n);
-	   
+	    	 if(ctrif.equals(false))result=decrypt(tekst[0],d,n);
+	    	 else result= decrypt2(d,pp,qq, new BigInteger(tekst[0])).toByteArray();
+	    	 
+	    	
 	    	for(int i=1; i<size;i++)
 	    		{ if(!(tekst[i]==null))
-	    			{pom=decrypt(tekst[i],d,n);
-	    				result=copy(result,pom);
+	    			{  if(ctrif.equals(false))pom=decrypt(tekst[i],d,n);
+	    			 else{ 
+	    				 
+	    				 
+	    				  pom= decrypt2(d,pp,qq, new BigInteger(tekst[i])).toByteArray();       
+	    	     
+	    			 
+	    			 }
+	    			 result=copy(result,pom);
+	    			  
 	    			}
 	    		}
 	    	return result;
@@ -248,6 +298,176 @@ public class rsa {
 		
 		
 	}
+	
+	public byte[][] encryptTotal2(String  tekst, BigInteger ee, BigInteger nn, BigInteger pp, BigInteger qq, Boolean ctrif, int lll)
+	{    BigInteger e;
+		e=ee;
+		BigInteger n;
+     	n=nn;
+		String sizeTest=n.toString();
+	    
+	    byte[]pom;
+	    int size=size(tekst,n);
+		String s=tekst;
+		String first,second;
+		int sizetab=(s.length());
+		byte[][] result=new byte[sizetab][];
+		int i=0;
+		int size2;
+		int how=0;
+		 ExecutorService executorService = Executors.newFixedThreadPool(lll);
+		 
+         List<Callable<byte[]>> lst = new ArrayList<Callable<byte[]>>();
+		while(s.length()>0)
+		{String min=s.substring(0, 1);
+		
+		
+		if(polish(min))  { size2=size(s.substring(1,s.length()), n); }
+		else size2=size(s, n);
+			if(s.length()>size2) 
+				{first = s.substring(0, size2);
+				 min=first.substring(0, 1);
+				if(polish(min))  { first="?"+s.substring(1,size2);	}else{}
+				second = s.substring(size2, s.length());
+				s=second;
+			
+				
+				if(how<lll )
+				{    
+					lst.add(new TaskAsCallable(e,pp,qq, first.getBytes()));
+					how=how+1;	
+					//System.out.println(how+ " " + i);
+					
+				}
+			else
+				{ List<Future<byte[]>> tasks;
+					try {
+							tasks = executorService.invokeAll(lst);
+								//System.out.println( " ;" +tasks.size() +" Responses recieved.\n");
+		      
+								for(Future<byte[]> task : tasks)
+									{result[i]=task.get();
+									i=i+1;
+									}
+								lst = new ArrayList<Callable<byte[]>>();
+								how=0;
+								
+								lst.add(new TaskAsCallable(e,pp,qq, first.getBytes()));
+								how=how+1;	
+								
+							} catch (InterruptedException | ExecutionException e1) {
+								// TODO Auto-generated catch block
+									e1.printStackTrace();
+							}
+			
+				}
+				
+				
+			}
+			else 
+			{   List<Future<byte[]>> tasks;
+			try {
+				tasks = executorService.invokeAll(lst);
+			//	System.out.println(" ;" +tasks.size() +" Responses recieved.\n");
+			      
+				for(Future<byte[]> task : tasks)
+					{result[i]=task.get();
+					i=i+1;
+					}
+				result[i]= encrypt2(e,pp,qq, new BigInteger(s.getBytes())).toByteArray();
+
+				return result;
+				} catch (InterruptedException | ExecutionException e1) {
+					// TODO Auto-generated catch block
+						e1.printStackTrace();
+				}
+				
+			
+			}
+		
+		}
+		
+		
+		return result;
+		
+		
+	}
+	
+	
+	public byte[] decryptTotal2(byte[][]  tekst, BigInteger dd, BigInteger nn, BigInteger pp, BigInteger qq,Boolean ctrif, int lll)
+	{  BigInteger d;
+	    d=dd;
+	    BigInteger n;
+	     n=nn;
+	    byte[] result;
+	    byte[] pom;
+	    int size=tekst.length;
+	    int how=0;
+	    if(!(tekst[0]==null)) {} 
+	    {   result= decrypt2(d,pp,qq, new BigInteger(tekst[0])).toByteArray();
+	    	 
+	    	 ExecutorService executorService = Executors.newFixedThreadPool(lll);
+	         
+	         List<Callable<byte[]>> lst = new ArrayList<Callable<byte[]>>();
+	       
+	    	for(int i=1; i<size;i++)
+	    		{ if(!(tekst[i]==null))
+	    			{  
+	    				if(how<lll )
+	    					{
+	    						lst.add(new TaskAsCallable(d,pp,qq, tekst[i]));
+	    						how=how+1;	
+	    						
+	    					}
+	    				else
+	    					{ List<Future<byte[]>> tasks;
+	    						try {
+	    								tasks = executorService.invokeAll(lst);
+	    									//System.out.println(tasks.size() +" Responses recieved.\n");
+	    		          
+	    									for(Future<byte[]> task : tasks)
+	    										{
+	    											pom=task.get();
+	    											result=copy(result,pom);
+	    											}
+	    									lst = new ArrayList<Callable<byte[]>>();
+	    									how=0;
+	    									
+	    									lst.add(new TaskAsCallable(d,pp,qq, tekst[i]));
+	    		    						how=how+1;	
+	    									
+	    								} catch (InterruptedException | ExecutionException e) {
+	    									// TODO Auto-generated catch block
+	    										e.printStackTrace();
+	    								}
+	    				
+	    					}
+	    			 
+	    	     
+	    			  
+	    			}
+	    		}
+	    	
+	    	List<Future<byte[]>> tasks;
+			try {       tasks = executorService.invokeAll(lst);
+						//System.out.println(tasks.size() +" Responses recieved.\n");
+      
+						for(Future<byte[]> task : tasks)
+							{
+								pom=task.get();
+								result=copy(result,pom);
+								}
+					
+					} catch (InterruptedException | ExecutionException e) {
+						
+							e.printStackTrace();
+					}
+	    	  executorService.shutdown();
+	    	return result;
+	      }
+	    
+	}
+	
 	
 	
 	static String readFile(String path, Charset encoding) 
@@ -295,6 +515,10 @@ public class rsa {
 public static void main(String[] args) {
 
     try {
+    	Calendar rightNow = Calendar.getInstance();
+        int hour = rightNow.get(Calendar.HOUR_OF_DAY);
+        int min=rightNow.get(Calendar.MINUTE);
+        System.out.println(" Pocz¹tek " + hour + " " +min);
 
       if (args[0].equals("generate")) {
     	  int k,d;
@@ -310,6 +534,10 @@ public static void main(String[] args) {
     		     e.printStackTrace();
     		     System.exit(0);
     	  		}
+    	  rightNow = Calendar.getInstance();
+    	    hour = rightNow.get(Calendar.HOUR_OF_DAY);
+    	    min=rightNow.get(Calendar.MINUTE);
+    	    System.out.println(" Koniec. " + hour + " " +min);
     	  System.exit(0);
     	  }
       }
@@ -323,8 +551,18 @@ public static void main(String[] args) {
 		
 		 if (args[0].equals("encrypt")) {
 	    	  int k,d;
-	    	  if (!args[2].isEmpty() && !args[1].isEmpty()) 
-	    	  {  try{
+	    	  if (!args[2].isEmpty() && !args[1].isEmpty()  && !args[3].isEmpty()  && !args[4].isEmpty()) 
+	    	  {  try{ k=8;
+	    		  try{
+	    		  		k=Integer.parseInt(args[4]);
+	    		  	
+	    	  		}
+	    	  	catch(Exception e)
+	    	  		{
+	    		     System.out.println("Error8");
+	    		     e.printStackTrace();
+	    		     
+	    	  		}
 	    		  
 	    		  data = readFile(args[1], Charset.defaultCharset());
 	    		  String data2 = readFile("public.key", Charset.defaultCharset());
@@ -333,6 +571,13 @@ public static void main(String[] args) {
  		  		 	BigInteger ee,nn;
  		  		 	ee= new BigInteger(key[0]);
  		  		 	nn= new BigInteger(key[1]);
+ 		  		 	String data3 = readFile("key.key", Charset.defaultCharset());
+ 		  		 	String[] key2;
+ 		  		 	key2=data3.split(";");
+ 		  		 	//System.out.println(key2[0]);
+ 		  		 	BigInteger pp,qq;
+ 		  		 	pp= new BigInteger(key2[0]);
+ 		  		 	qq= new BigInteger(key2[1]);
 	    			
 	    			String teststring ;
 	    		    Liczby lp=new Liczby();
@@ -340,8 +585,9 @@ public static void main(String[] args) {
 	    			//System.out.println("Encrypting String: " + teststring);
 	    			//System.out.println("String in Bytes: " + bytesToString(teststring.getBytes()));
 	    			// encrypt
-	    			byte[][] encrypted = rsa.encryptTotal(teststring,ee,nn);
-	    			
+	    			byte[][] encrypted;
+	    			if(args[3].equals(true)) encrypted= rsa.encryptTotal2(teststring,ee,nn,pp,qq, args[3].equals(true),k);
+	    			else encrypted= rsa.encryptTotal(teststring,ee,nn,pp,qq, args[3].equals(true));
 	    			//System.out.println("Encrypted String in Bytes: " + bytesToString(encrypted[0]));
 	    			FileOutputStream fileOutputStream = new FileOutputStream( args[2]);
 
@@ -359,26 +605,49 @@ public static void main(String[] args) {
 	    	  		}
 
 	    	  }
+	    	  rightNow = Calendar.getInstance();
+	    	    hour = rightNow.get(Calendar.HOUR_OF_DAY);
+	    	     min=rightNow.get(Calendar.MINUTE);
+	    	    System.out.println(" Koniec. " + hour + " " +min);
 	    	  System.exit(0);
 	      }
 		 
 		 
 		 if (args[0].equals("decrypt")) {
 	    	  int k,d;
-	    	  if (!args[1].isEmpty() && !args[2].isEmpty() ) 
+	    	  if (!args[1].isEmpty() && !args[2].isEmpty()  && !args[3].isEmpty()  && !args[4].isEmpty()) 
 	    	  {  try{  // System.out.println("Decrypted String in Bytes: " + args[1]+ " " + args[2]);
-	    		  		
+	    		  k=8;
+	    		  try{
+	    		  		k=Integer.parseInt(args[4]);
+	    		  	
+	    	  		}
+	    	  	catch(Exception e)
+	    	  		{
+	    		     System.out.println("Error8");
+	    		     e.printStackTrace();
+	    		     
+	    	  		}
 	    		  		 data = readFile("private.key", Charset.defaultCharset());
 	    		  		 String[] key;
 	    		  		 key=data.split(";");
 	    		  		 BigInteger dd,nn;
 	    		  		 dd= new BigInteger(key[0]);
 	    		  		 nn= new BigInteger(key[1]);
+	    		  		String data3 = readFile("key.key", Charset.defaultCharset());
+	 		  		 	String[] key2;
+	 		  		 	key2=data3.split(";");
+	 		  		 	BigInteger pp,qq;
+	 		  		 	pp= new BigInteger(key2[0]);
+	 		  		 	qq= new BigInteger(key2[1]);
 	    		  		
 	    		  		FileInputStream fileInputStream = new FileInputStream(args[1]);
 	    				ObjectInputStream ois = new ObjectInputStream(fileInputStream);
 	    				byte[][] encrypted2 = (byte[][])ois.readObject();
-	    				byte[] decrypted2 = rsa.decryptTotal(encrypted2,dd,nn);
+	    				byte[] decrypted2;
+	    				if(args[3].equals(true))
+	    					 decrypted2 = rsa.decryptTotal2(encrypted2,dd,nn,pp,qq,args[3].equals(true),k);
+	    				else  decrypted2 = rsa.decryptTotal(encrypted2,dd,nn,pp,qq,args[3].equals(true));
 	    				//System.out.println("Decrypted String in Bytes: " + key[1]+ bytesToString(decrypted2));
 	    			//	System.out.println("Decrypted String: " + new String(decrypted2, Charset.defaultCharset()));
 	    				
@@ -389,8 +658,14 @@ public static void main(String[] args) {
 	    	  		{
 	    		     System.out.println("Error7");
 	    		     e.printStackTrace();
+	    		     
 	    		     System.exit(0);
 	    	  		}
+	    	 rightNow = Calendar.getInstance();
+	    	    hour = rightNow.get(Calendar.HOUR_OF_DAY);
+	    	     min=rightNow.get(Calendar.MINUTE);
+	    	    System.out.println(" Koniec. " + hour + " " +min);
+	    	   
 	    	  System.exit(0);
 	    	  }
 	      }	
@@ -414,8 +689,10 @@ public static void main(String[] args) {
     		} catch (Exception e) {
     				e.printStackTrace();
     			}
-    
-    System.out.println(" Koniec. ");
+    Calendar rightNow = Calendar.getInstance();
+    int hour = rightNow.get(Calendar.HOUR_OF_DAY);
+    int min=rightNow.get(Calendar.MINUTE);
+    System.out.println(" Koniec. " + hour + " " +min);
     System.exit(0);
   }
   
